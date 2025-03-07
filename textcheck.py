@@ -1,63 +1,52 @@
-import streamlit as st
 import requests
-import json
+from bs4 import BeautifulSoup
 
-def check_spelling(text):
-    """ 네이버 맞춤법 검사기를 이용해 맞춤법 검사 수행 """
-    url = "http://164.125.7.61/speller/results"
-    text = text.replace('\n', '\r\n')  # 개행 문자 변환
-    response = requests.post(url, data={"text1": text})
+def check_spelling_nara(text):
+    # 1. 세션 생성 (첫 번째 요청)
+    session = requests.Session()
+    
+    # User-Agent를 추가하여 브라우저 요청처럼 보이게 함
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+        "Referer": "https://nara-speller.co.kr/speller"
+    }
 
+    # 첫 페이지 요청 (세션 유지)
+    session.get("https://nara-speller.co.kr/speller", headers=headers)
+
+    # 2. 맞춤법 검사 요청 (두 번째 요청)
+    url = "https://nara-speller.co.kr/speller/results"
+    data = {
+        "text1": text
+    }
+
+    response = session.post(url, headers=headers, data=data)
+    
     if response.status_code == 200:
-        try:
-            # 응답 데이터에서 JSON 데이터만 추출
-            json_data = response.text.split("data = [", 1)[-1].rsplit("];", 1)[0]
-            data = json.loads(json_data)
-
-            # 원본 텍스트를 수정된 문장으로 변환
-            corrected_text = text
-            corrections = []  # 수정된 단어 목록
-            
-            for error in data:
-                if "orgStr" in error and "candWord" in error and error["candWord"]:
-                    original_word = error["orgStr"]  # 원래 단어
-                    suggested_word = error["candWord"].split('|')[0]  # 첫 번째 추천 단어
-                    
-                    # 수정된 문장 업데이트
-                    corrected_text = corrected_text.replace(original_word, suggested_word)
-                    
-                    # 수정된 단어 리스트 저장
-                    corrections.append((original_word, suggested_word))
-            
-            return corrected_text, corrections
-        except Exception as e:
-            return None, f"데이터 처리 오류: {e}"
+        result_text = extract_corrected_text(response.text)
+        return result_text
     else:
-        return None, "네트워크 오류 발생"
+        return f"오류 발생: HTTP {response.status_code}"
 
-# Streamlit UI 구성
-st.title("📝 네이버 맞춤법 검사기")
+def extract_corrected_text(html_response):
+    """
+    HTML 응답에서 교정된 문장을 추출하는 함수.
+    """
+    soup = BeautifulSoup(html_response, "html.parser")
 
-# 사용자 입력 받기
-text_input = st.text_area("📌 맞춤법을 검사할 문장을 입력하세요:")
-
-if st.button("✅ 맞춤법 검사하기"):
-    if text_input.strip():
-        corrected_text, corrections = check_spelling(text_input)
-        
-        if corrected_text:
-            # 수정된 문장 출력
-            st.subheader("🔹 수정된 문장")
-            st.write(corrected_text)
-
-            # 수정된 단어 리스트 출력
-            if corrections:
-                st.subheader("📌 수정된 단어 목록")
-                for original, corrected in corrections:
-                    st.write(f"👉 **{original}** → *{corrected}*")
-            else:
-                st.info("🔍 수정할 단어가 없습니다!")
-        else:
-            st.error(f"❌ 맞춤법 검사 중 오류가 발생했습니다: {corrections}")
+    # 맞춤법 수정된 문장이 포함된 <td class="tdReplace"> 찾기
+    result_divs = soup.find_all("td", {"class": "tdReplace"})
+    
+    if result_divs:
+        corrected_text = " ".join(div.text.strip() for div in result_divs)
+        return corrected_text
     else:
-        st.warning("⚠️ 문장을 입력해주세요!")
+        return "맞춤법 검사 결과를 가져올 수 없습니다."
+
+if __name__ == "__main__":
+    text = input("검사할 문장을 입력하세요: ")
+    corrected_text = check_spelling_nara(text)
+    
+    print("\n[맞춤법 검사 결과]")
+    print(f"원본 문장: {text}")
+    print(f"수정된 문장: {corrected_text}")
