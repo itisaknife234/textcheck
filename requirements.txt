@@ -1,3 +1,4 @@
 requests
 streamlit
 beautifulsoup4
+json
